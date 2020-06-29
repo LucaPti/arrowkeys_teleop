@@ -15,7 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+find_package(X11 REQUIRED COMPONENTS system)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -119,6 +119,8 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${X11_INCLUDE_DIR}
+  ${PROJECT_SOURCE_DIR}/lib/gainput/lib/include
 )
 
 ## Declare a C++ library
@@ -147,8 +149,12 @@ add_executable(${PROJECT_NAME}_node src/arrowkeys_teleop_node.cpp)
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
+FIND_LIBRARY(gainput_LIBRARIES libgainput ${PROJECT_SOURCE_DIR}/lib/gainput/build/lib)
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
+  ${X11_LIBRARIES}
+  ${gainput_LIBRARIES}
+  GL
 )
 
 #############

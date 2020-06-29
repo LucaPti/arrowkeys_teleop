@@ -1,59 +1,130 @@
 #include "ros/ros.h"
 #include <geometry_msgs/Twist.h>
 
+#include <gainput/gainput.h>
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#include <GL/glx.h>
+#include <iostream>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <linux/input.h>
-#include <time.h>
-#include <stdint.h>
-// ioctl stuff runs only as root -> sudo -s before rosrun
+enum Buttons
+{
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown
+};
+
+const char* windowName = "Arrow Key Input Node";
+const int width = 400;
+const int height = 400;
 
 int main(int argc, char **argv)
 {
-  //Initiate ROS
+  // Initiate ROS
   ros::init(argc, argv, "twist2rc");
   ros::NodeHandle n_; 
   ros::Publisher pub_ = n_.advertise<geometry_msgs::Twist>("cmd_vel", 1);
   ROS_INFO("publishing to cmd_vel");
   ros::Rate loop_rate(100);
 
-  // Keyboard stuff
-  int rcode = 0;
+  // Initiate X Window Manager
+  static int attributeListDbl[] = {GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 1, GLX_GREEN_SIZE, 1, GLX_BLUE_SIZE, 1, None};
 
-  char keyboard_name[256] = "Unknown";
-  int keyboard_fd = open("/dev/input/event1", O_RDONLY | O_NONBLOCK);
-  if ( keyboard_fd == -1 ) {
-    printf("Failed to open keyboard.\n");
-    exit(1);
-  }
-  rcode = ioctl(keyboard_fd, EVIOCGNAME(sizeof(keyboard_name)), keyboard_name);
-  printf("Reading From : %s \n", keyboard_name);
-
-  printf("Getting exclusive access: ");
-  rcode = ioctl(keyboard_fd, EVIOCGRAB, 1);
-  printf("%s\n", (rcode == 0) ? "SUCCESS" : "FAILURE");
-  struct input_event keyboard_event;
-int end = time(NULL) + 10;
-// Goal: detect arrow key to get exclusive access, esc restores old mode
-  while (ros::ok() && (time(NULL)<end))
+  Display* xDisplay = XOpenDisplay(0);
+  if (xDisplay == 0)
   {
-    if ( read(keyboard_fd, &keyboard_event, sizeof(keyboard_event)) != -1 ) {
-      printf("keyboard event: type %d code %d value %d  \n", keyboard_event.type, keyboard_event.code, keyboard_event.value);
+    std::cerr << "Cannot connect to X server." << std::endl;
+    return -1;
+  }
+
+  Window root = DefaultRootWindow(xDisplay);
+
+  XVisualInfo* vi = glXChooseVisual(xDisplay, DefaultScreen(xDisplay), attributeListDbl);
+  assert(vi);
+
+  GLXContext context = glXCreateContext(xDisplay, vi, 0, GL_TRUE);
+
+  Colormap cmap = XCreateColormap(xDisplay, root, vi->visual, AllocNone);
+
+  XSetWindowAttributes swa;
+  swa.colormap = cmap;
+  swa.event_mask = ExposureMask
+		| KeyPressMask | KeyReleaseMask
+		| PointerMotionMask | ButtonPressMask | ButtonReleaseMask;
+
+  Window xWindow = XCreateWindow(
+			xDisplay, root,
+			0, 0, width, height, 0,
+			CopyFromParent, InputOutput,
+			CopyFromParent, CWEventMask,
+			&swa
+			);
+
+  glXMakeCurrent(xDisplay, xWindow, context);
+
+  XSetWindowAttributes xattr;
+  xattr.override_redirect = False;
+  XChangeWindowAttributes(xDisplay, xWindow, CWOverrideRedirect, &xattr);
+
+  XMapWindow(xDisplay, xWindow);
+  XStoreName(xDisplay, xWindow, windowName);
+
+  // Setup Gainput
+  gainput::InputManager manager;
+  const gainput::DeviceId keyboardId = manager.CreateDevice<gainput::InputDeviceKeyboard>();
+
+  gainput::InputMap map(manager);
+  map.MapBool(ArrowLeft, keyboardId, gainput::KeyLeft);
+  map.MapBool(ArrowRight, keyboardId, gainput::KeyRight);
+  map.MapBool(ArrowUp, keyboardId, gainput::KeyUp);
+  map.MapBool(ArrowDown, keyboardId, gainput::KeyDown);
+
+  manager.SetDisplaySize(width, height);
+
+  while (ros::ok())
+  {
+    // Update Gainput
+    manager.Update();
+
+    XEvent event;
+    while (XPending(xDisplay))
+    {
+      XNextEvent(xDisplay, &event);
+      manager.HandleEvent(event);
     }
+
+    // Check button states
     geometry_msgs::Twist msg;
-    msg.linear.x = 0.25;
-    msg.angular.z = 0.1;
+    if (map.GetBool(ArrowLeft))
+    {
+      msg.angular.z = 1.0;
+    }
+    else if (map.GetBool(ArrowRight))
+    {
+      msg.angular.z = -1.0;
+    }
+    else 
+    {
+      msg.angular.z = 0.0;
+    }
+    if (map.GetBool(ArrowUp))
+    {
+      msg.linear.x = 1.0;
+    }
+    else if (map.GetBool(ArrowDown))
+    {
+      msg.linear.x = -1.0;
+    }
+    else 
+    {
+      msg.linear.x = 0.0;
+    }
     pub_.publish(msg);
 
     ros::spinOnce();
 
     loop_rate.sleep();
   }
-printf("Exiting.\n");
-  rcode = ioctl(keyboard_fd, EVIOCGRAB, 1);
-  close(keyboard_fd);
   return 0;
 }
