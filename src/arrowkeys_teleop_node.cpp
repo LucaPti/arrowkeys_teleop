@@ -22,7 +22,7 @@ const int height = 400;
 int main(int argc, char **argv)
 {
   // Initiate ROS
-  ros::init(argc, argv, "twist2rc");
+  ros::init(argc, argv, "arrowkeys_teleop_node");
   ros::NodeHandle n_; 
   ros::Publisher pub_ = n_.advertise<geometry_msgs::Twist>("cmd_vel", 1);
   ROS_INFO("publishing to cmd_vel");
