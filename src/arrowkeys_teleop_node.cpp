@@ -6,6 +6,8 @@
 #include <X11/Xatom.h>
 #include <GL/glx.h>
 #include <iostream>
+#include <dynamic_reconfigure/server.h>
+#include <arrowkeys_teleop/ArrowKeysConfig.h>
 
 enum Buttons
 {
@@ -18,6 +20,15 @@ enum Buttons
 const char* windowName = "Arrow Key Input Node";
 const int width = 400;
 const int height = 400;
+double forward_range = 0.25;
+double reverse_range = 0.25;
+double steering_range = 1;
+
+void callback(arrowkeys_teleop::ArrowKeysConfig &config, uint32_t level) {
+  forward_range = config.forward_range;
+  reverse_range = config.reverse_range;
+  steering_range = config.steering_range;
+}
 
 int main(int argc, char **argv)
 {
@@ -26,7 +37,12 @@ int main(int argc, char **argv)
   ros::NodeHandle n_; 
   ros::Publisher pub_ = n_.advertise<geometry_msgs::Twist>("cmd_vel", 1);
   ROS_INFO("publishing to cmd_vel");
-  ros::Rate loop_rate(100);
+  ros::Rate loop_rate(50);
+  dynamic_reconfigure::Server<arrowkeys_teleop::ArrowKeysConfig> server;
+  dynamic_reconfigure::Server<arrowkeys_teleop::ArrowKeysConfig>::CallbackType f;
+
+  f = boost::bind(&callback, _1, _2);
+  server.setCallback(f);
 
   // Initiate X Window Manager
   static int attributeListDbl[] = {GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 1, GLX_GREEN_SIZE, 1, GLX_BLUE_SIZE, 1, None};
@@ -98,11 +114,11 @@ int main(int argc, char **argv)
     geometry_msgs::Twist msg;
     if (map.GetBool(ArrowLeft))
     {
-      msg.angular.z = 1.0;
+      msg.angular.z = steering_range;
     }
     else if (map.GetBool(ArrowRight))
     {
-      msg.angular.z = -1.0;
+      msg.angular.z = -steering_range;
     }
     else 
     {
@@ -110,11 +126,11 @@ int main(int argc, char **argv)
     }
     if (map.GetBool(ArrowUp))
     {
-      msg.linear.x = 1.0;
+      msg.linear.x = forward_range;
     }
     else if (map.GetBool(ArrowDown))
     {
-      msg.linear.x = -1.0;
+      msg.linear.x = -reverse_range;
     }
     else 
     {
